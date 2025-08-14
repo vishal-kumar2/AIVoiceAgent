@@ -41,24 +41,24 @@ project/
 
 ## ⚙️ Setup & Installation
 
-1. **Clone the Repository**
-  git clone https://github.com/<your-username>/AIVoiceAgent.git
-  cd AIVoiceAgent
+1. **Clone the Repository:**
+  -git clone https://github.com/<vishal-kumar2>/AIVoiceAgent.git
+  -cd AIVoiceAgent
 
 2. **Clone the Repository**
-  python -m venv venv
-  venv\Scripts\activate    # On Windows
-  source venv/bin/activate # On Mac/Linux
+  -python -m venv venv
+  -venv\Scripts\activate    # On Windows
+  -source venv/bin/activate # On Mac/Linux
 
 3. **Install Dependencies**
-  pip install -r requirements.txt
+  -pip install -r requirements.txt
 
 4. **Set Environment Variables**
-  Create a .env file in the root directory:
-    ASSEMBLYAI_API_KEY=your_assemblyai_api_key
-    MURF_API_KEY=your_murf_api_key
+  -Create a .env file in the root directory:
+    -ASSEMBLYAI_API_KEY=your_assemblyai_api_key
+    -MURF_API_KEY=your_murf_api_key
 
 
 5. **Run the Application**
-  uvicorn main:app --reload
+  -uvicorn main:app --reload
 
