@@ -14,38 +14,29 @@ The interaction happens in real-time, creating a seamless voice-based conversati
 
 ---
 
-## 🛠️ Tech Stack
-- **Backend:** FastAPI (Python)
+## 🛠 Tech Stack
+
+- **Backend Framework:** FastAPI (Python)
 - **Frontend:** HTML, CSS, JavaScript
-- **APIs:**
-  - [AssemblyAI](https://www.assemblyai.com/) – Speech-to-Text
-  - [Murf AI](https://murf.ai/) – Text-to-Speech
-- **Other Tools:** Git, VS Code
+- **Speech-to-Text:** AssemblyAI API
+- **Text-to-Speech:** Murf API
+- **AI Processing / Conversation:** Google Gemini API
+- **Server:** Uvicorn
+- **Environment Management:** python-dotenv
 
 ---
 
-## 📂 Folder Structure
-project/
-├── main.py # FastAPI backend server
-├── static/ # Static files (CSS, JS, generated audio - excluded in .gitignore)
-├── templates/ # HTML templates
-├── uploads/ # Uploaded recordings (excluded in .gitignore)
-├── .env # API keys and environment variables
-├── .gitignore
-└── README.md
 
 
 
-
----
-
-## ⚙️ Setup & Installation
 
 ## 📦 Installation
 
 ```bash
 git clone https://github.com/<your-username>/AIVoiceAgent.git
 cd AIVoiceAgent
+
+# Create a virtual environment
 python -m venv venv  # On Windows
 venv\Scripts\activate
 
@@ -53,10 +44,13 @@ venv\Scripts\activate
 python3 -m venv venv
 source venv/bin/activate
 
+# Install dependencies
 pip install -r requirements.txt
 
-# Create .env file and add:
+# Create a .env file in the project root and add:
 # ASSEMBLYAI_API_KEY=your_assemblyai_api_key
 # MURF_API_KEY=your_murf_api_key
+# GEMINI_API_KEY=your_gemini_api_key
 
+# Run the application
 uvicorn main:app --reload
