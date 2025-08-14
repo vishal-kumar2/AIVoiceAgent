@@ -1,0 +1,14 @@
+# Ignore uploads folder
+/uploads/
+
+# Ignore Murf-generated voices in static
+/static/*.mp3
+/static/*.wav
+
+# Ignore environment variables
+.env
+
+# Ignore Python cache and venv
+__pycache__/
+*.pyc
+venv/

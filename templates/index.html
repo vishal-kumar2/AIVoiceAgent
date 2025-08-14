@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice Agent</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="app-header">
+      <h1>🎙️ Conversational Voice Agent</h1>
+      <div class="session-pill">
+        <span id="sessionIdLabel">Session: —</span>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="card">
+        <div class="status-row">
+          <div id="agentStatus" class="status-dot idle"></div>
+          <span id="statusText">Idle</span>
+        </div>
+
+        <div class="conversation" id="conversationLog"></div>
+
+        <div class="controls">
+          <button id="recordBtn" class="mic-btn" aria-pressed="false">
+            <span class="mic-icon">🎤</span>
+            <span class="mic-label" id="micLabel">Start Recording</span>
+          </button>
+        </div>
+
+        <div class="helper">
+          <small>Hey Good afternnon ,Vishal</small>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Hidden audio element for autoplay -->
+  <audio id="replyAudio" style="display:none"></audio>
+
+  <script src="/static/script.js"></script>
+</body>
+</html>
