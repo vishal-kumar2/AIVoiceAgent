@@ -54,3 +54,22 @@ pip install -r requirements.txt
 
 # Run the application
 uvicorn main:app --reload
+
+
+```30-days-voice-agents
+├── main.py
+├── .env
+├── requirements.txt
+├── static
+│   ├── script.js
+│   ├── style.css
+├── uploads
+├── templates
+│   └── index.html
+├── services
+│   ├── __init__.py
+│   ├── tts_service.py
+│   ├── stt_service.py
+│   └── llm_service.py
+└── README.md```
+
