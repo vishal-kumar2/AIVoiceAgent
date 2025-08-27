@@ -1,123 +1,169 @@
-from fastapi import FastAPI, File, UploadFile, Request
-from fastapi.responses import JSONResponse, HTMLResponse
+# main.py
+import os
+import asyncio
+import logging
+import threading
+from pathlib import Path
+import base64
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from pydantic import BaseModel
-from pathlib import Path
-import shutil
-import uuid
-import os
 from dotenv import load_dotenv
+from fastapi import  Request
 
-# --- Load .env before importing any services ---
-BASE_DIR = Path(__file__).resolve().parent
-dotenv_path = BASE_DIR / ".env"
-if not dotenv_path.exists():
-    raise FileNotFoundError(f".env not found at {dotenv_path}")
-load_dotenv(dotenv_path)
+from assemblyai.streaming.v3 import (
+    StreamingClient, StreamingClientOptions,
+    StreamingParameters, StreamingEvents,
+    BeginEvent, TurnEvent, TerminationEvent,
+    StreamingError
+)
 
-'''print("GEMINI_API_KEY =", os.getenv("GEMINI_API_KEY"))
-print("ASSEMBLYAI_API_KEY =", os.getenv("ASSEMBLYAI_API_KEY"))
-print("MURF_API_KEY =", os.getenv("MURF_API_KEY"))'''
+load_dotenv()
+ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
+MURF_API_KEY = os.getenv("MURF_API_KEY")
 
-# --- Now import services ---
-from services.tts_service import generate_murf_audio, download_url_to_file
-from services.stt_service import transcribe_with_assemblyai
-from services.llm_service import query_gemini
+# Import helper functions
+from services.llm_service import get_gemini_response
+from services.tts_service import murf_tts_base64  # async generator yielding base64 chunks
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("app")
 
 app = FastAPI()
+BASE_DIR = Path(__file__).resolve().parent
+templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
-UPLOAD_DIR = BASE_DIR / "uploads"
-STATIC_DIR = BASE_DIR / "static"
-TEMPLATES_DIR = BASE_DIR / "templates"
-for d in [UPLOAD_DIR, STATIC_DIR, TEMPLATES_DIR]:
-    d.mkdir(exist_ok=True)
 
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
-templates = Jinja2Templates(directory=TEMPLATES_DIR)
+@app.get("/test")
+async def get_test():
+    html_path = BASE_DIR / "templates" / "test.html"
+    return HTMLResponse(html_path.read_text(encoding="utf-8"))
 
-FALLBACK_AUDIO_FILE = STATIC_DIR / "fallback_audio.mp3"
-FALLBACK_TEXT = "I'm having trouble connecting right now. Please try again later."
-chat_history_store = {}
 
-async def ensure_fallback_audio():
-    if not FALLBACK_AUDIO_FILE.exists():
-        audio_url = await generate_murf_audio(FALLBACK_TEXT, voice_id="en-IN-aarav")
-        if audio_url and not audio_url.startswith("/static/"):
-            await download_url_to_file(audio_url, FALLBACK_AUDIO_FILE)
-
-@app.on_event("startup")
-async def startup_event():
-    await ensure_fallback_audio()
-
-class TTSRequest(BaseModel):
-    text: str
-    voice_id: str | None = None
-
-class LLMQuery(BaseModel):
-    text: str
-
-@app.get("/", response_class=HTMLResponse)
-async def serve_index(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
-
-@app.post("/generate-audio")
-async def generate_audio_endpoint(req: TTSRequest):
-    voice = req.voice_id or "en-IN-aarav"
-    audio_url = await generate_murf_audio(req.text, voice_id=voice)
-    if not audio_url:
-        if FALLBACK_AUDIO_FILE.exists():
-            return {"audio_url": f"/static/{FALLBACK_AUDIO_FILE.name}"}
-        return JSONResponse({"detail": "TTS failed"}, status_code=500)
-    return {"audio_url": audio_url}
-
-@app.post("/agent/chat/{session_id}")
-async def agent_chat(session_id: str, audio_file: UploadFile = File(...)):
-    incoming_name = f"{uuid.uuid4().hex}_{audio_file.filename}"
-    saved_path = UPLOAD_DIR / incoming_name
-    with open(saved_path, "wb") as out_f:
-        shutil.copyfileobj(audio_file.file, out_f)
-
-    transcript = await transcribe_with_assemblyai(str(saved_path))
-    if not transcript:
-        return {
-            "session_id": session_id,
-            "transcription": None,
-            "llm_text": None,
-            "audio_url": f"/static/{FALLBACK_AUDIO_FILE.name}",
-            "error": "STT failed"
-        }
-
-    chat_history_store.setdefault(session_id, []).append({"role": "user", "content": transcript})
-
-    history_text = "\n".join(f"{msg['role'].capitalize()}: {msg['content']}" for msg in chat_history_store[session_id])
-    prompt = (
-        "You are a helpful assistant that always replies in English.\n"
-        "Continue the conversation naturally.\n\n"
-        f"{history_text}\nAssistant:"
-    )
-
-    llm_text = query_gemini(prompt) or "I'm having trouble connecting to the language model right now."
-    chat_history_store[session_id].append({"role": "assistant", "content": llm_text})
-
-    audio_url = await generate_murf_audio(llm_text) or f"/static/{FALLBACK_AUDIO_FILE.name}"
-
-    return {
-        "session_id": session_id,
-        "transcription": transcript,
-        "llm_text": llm_text,
-        "audio_url": audio_url,
-        "history": chat_history_store[session_id]
+# 🎭 Persona definitions (keep them at the top or outside the function)
+persona_map = {
+    "teacher": {
+        "prompt": "You are a friendly helpful assistant with a calm tone. Explain concepts clearly.",
+        "voice": "en-IN-aarav"   # calm, clear voice
+    },
+    "pirate": {
+        "prompt": "You are a witty pirate. Always speak like a pirate from the Caribbean. Use 'Arrr', 'matey', 'booty'. Never break character.",
+        "voice": "en-IN-aarav"   # rougher, deeper voice
+    },
+    "cowboy": {
+        "prompt": "You are a cowboy from the Wild West. Use cowboy slang. Speak like you're around a campfire with your herd.",
+        "voice": "en-IN-aarav"   # rustic, storytelling tone
+    },
+    "robot": {
+        "prompt": "You are a robot with a mechanical tone. Be concise. Speak like a machine.",
+        "voice": "en-US-daisy"    # robotic voice
+    },
+    "comedian": {  # ← New persona
+        "prompt": "You are a stand-up comedian. Make witty jokes, puns, and funny remarks relevant to the conversation. Keep a cheerful, playful tone.",
+        "voice": "en-IN-aarav"  # or another voice of your choice
     }
+}
 
-@app.post("/llm/query")
-async def llm_query_endpoint(body: LLMQuery):
-    llm_response = query_gemini(body.text)
-    if llm_response is None:
-        return JSONResponse({"error": "LLM call failed"}, status_code=500)
-    return {"response": llm_response}
 
-@app.get("/chat/history/{session_id}")
-def get_history(session_id: str):
-    return {"session_id": session_id, "history": chat_history_store.get(session_id, [])}
+@app.post("/chat")
+async def chat(request: Request):
+    body = await request.json()
+    user_input = body.get("message", "")
+    persona_choice = body.get("persona", "teacher")
+    logger.info(f"🧑 Persona selected: {persona_choice}") 
+
+    # ✅ pick persona safely
+    persona = persona_map.get(persona_choice, persona_map["teacher"])
+    reply = await get_gemini_response(user_input, persona["prompt"])
+
+    return {"reply": reply}
+
+logger.info("Default persona is teacher until client sends update...")
+
+@app.websocket("/ws/stream")
+async def websocket_stream(websocket: WebSocket):
+    await websocket.accept()
+    logger.info("🎙️ WebSocket client connected")
+    loop = asyncio.get_event_loop()
+
+    # Default persona
+    persona_choice = "teacher"
+    persona = persona_map[persona_choice]
+
+    client = StreamingClient(StreamingClientOptions(api_key=ASSEMBLYAI_API_KEY))
+
+# in main.py
+    conversation_history = []
+
+    async def handle_turn(transcript: str):
+        await websocket.send_text(f"USER:{transcript}")
+        
+        conversation_history.append({"role": "user", "content": transcript})
+        llm_response = await get_gemini_response(conversation_history, persona["prompt"])
+        conversation_history.append({"role": "assistant", "content": llm_response})
+
+        await websocket.send_text(f"LLM:{llm_response}")
+        audio_b64 = await murf_tts_base64(llm_response, persona["voice"])
+        if audio_b64:
+            await websocket.send_text(f"AUDIO:{audio_b64}")
+
+
+    # AssemblyAI callbacks
+    def on_begin(client_obj, event: BeginEvent):
+        logger.info(f"AssemblyAI session started: {getattr(event, 'id', '')}")
+
+    def on_turn(client_obj, event: TurnEvent):
+        transcript = (event.transcript or "").strip()
+        if event.end_of_turn and transcript:
+            logger.info(f"✅ Final Turn Transcript: {transcript}")
+            asyncio.run_coroutine_threadsafe(handle_turn(transcript), loop)
+
+    def on_terminated(client_obj, event: TerminationEvent):
+        logger.info(f"AssemblyAI session terminated: processed {getattr(event, 'audio_duration_seconds', None)} sec")
+
+    def on_error(client_obj, error: StreamingError):
+        logger.error("AssemblyAI streaming error: %s", error)
+
+    client.on(StreamingEvents.Begin, on_begin)
+    client.on(StreamingEvents.Turn, on_turn)
+    client.on(StreamingEvents.Termination, on_terminated)
+    client.on(StreamingEvents.Error, on_error)
+
+    threading.Thread(target=lambda: client.connect(
+        StreamingParameters(
+            sample_rate=16000,
+            enable_turn_detection=True,
+            end_of_turn_silence_threshold=500
+        )
+    ), daemon=True).start()
+
+    # --- WebSocket receive loop ---
+    try:
+        while True:
+            try:
+                msg = await websocket.receive()
+            except WebSocketDisconnect:
+                logger.info("🔌 Client disconnected")
+                break  # exit the loop immediately
+
+            # Persona switch
+            if msg.get("text") is not None:
+                text_msg = msg["text"]
+                if text_msg.startswith("PERSONA:"):
+                    persona_choice = text_msg.replace("PERSONA:", "").strip()
+                    persona = persona_map.get(persona_choice, persona_map["teacher"])
+                    logger.info(f"🧑 Persona switched to: {persona_choice}")
+
+            # Audio stream
+            elif msg.get("bytes") is not None:
+                client.stream(msg["bytes"])
+
+    finally:
+        try:
+            client.disconnect(terminate=True)
+        except Exception:
+            logger.exception("Error disconnecting AssemblyAI client")
+        logger.info("🔒 Session closed")

@@ -1,74 +1,48 @@
 import os
-import time
-import uuid
 import aiohttp
-from pathlib import Path
+import base64
+import logging
 
+logger = logging.getLogger(__name__)
 MURF_API_KEY = os.getenv("MURF_API_KEY")
-STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+MURF_API_URL = "https://api.murf.ai/v1/speech/generate"
+VOICE_ID = "en-IN-aarav"
 
-async def download_url_to_file(url: str, dest: Path):
-    """Download a remote URL into dest (async)."""
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=60) as resp:
-                if resp.status != 200:
-                    print("Download failed with status:", resp.status)
-                    return False
-                data = await resp.read()
-                dest.write_bytes(data)
-                return True
-    except Exception as e:
-        print("Download exception:", e)
-        return False
+HEADERS = {
+    "api-key": MURF_API_KEY,
+    "Content-Type": "application/json"
+}
 
-async def generate_murf_audio(text: str, voice_id: str = "en-IN-aarav"):
+async def murf_tts_base64(text: str, voice_id: str = VOICE_ID) -> str:
     """
-    Call Murf TTS API to generate audio.
-    Returns an audio URL (external) or saved local file path (string), or None on failure.
+    Get Murf TTS as full base64-encoded MP3, with dynamic voice support.
     """
-    if not MURF_API_KEY:
-        print("Warning: Murf API key missing")
-        return None
-
-    url = "https://api.murf.ai/v1/speech/generate"
-    headers = {
-        "accept": "application/json",
-        "api-key": MURF_API_KEY,
-        "Content-Type": "application/json"
-    }
     payload = {
+        "voiceId": voice_id,
         "text": text,
-        "voice_id": voice_id,
-        "output_format": "application/json"
+        "format": "mp3",
+        "sampleRate": 16000,
+        "channelType": "stereo",
+        "responseFormat": "json"
     }
-
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers, timeout=120) as resp:
+            async with session.post(MURF_API_URL, headers=HEADERS, json=payload) as resp:
                 if resp.status != 200:
-                    print("Murf API returned status:", resp.status)
+                    logger.error("Murf API error: %s", await resp.text())
+                    return None
+                data = await resp.json()
+                audio_url = data.get("audioFile")
+                if not audio_url:
+                    logger.error("No audioFile in Murf response: %s", data)
                     return None
 
-                data = await resp.json()
-                audio_url = data.get("audioFile") or data.get("audio_file") or data.get("audio_url") or data.get("audioFileUrl")
-
-                if audio_url:
-                    try:
-                        # Download locally for stable serving
-                        local_name = f"murf_{int(time.time())}_{uuid.uuid4().hex[:8]}.mp3"
-                        local_path = STATIC_DIR / local_name
-                        if await download_url_to_file(audio_url, local_path):
-                            return f"/static/{local_name}"
-                    except Exception as e:
-                        print("Warning: Could not download Murf audio locally:", e)
-
-                    # fallback to remote URL
-                    return audio_url
-
-                print("Warning: Murf response missing audio URL")
-                return None
-
+            async with session.get(audio_url) as audio_resp:
+                if audio_resp.status != 200:
+                    logger.error("Failed to fetch audio: %s", await audio_resp.text())
+                    return None
+                audio_bytes = await audio_resp.read()
+                return base64.b64encode(audio_bytes).decode("utf-8")
     except Exception as e:
-        print("Murf TTS error:", e)
+        logger.exception("Error fetching Murf TTS: %s", e)
         return None
