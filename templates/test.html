@@ -183,7 +183,9 @@
         return;
       }
 
-      ws = new WebSocket(`ws://${location.host}/ws/stream`);
+      // Secure WebSocket for HTTPS
+      const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+      ws = new WebSocket(`${protocol}//${location.host}/ws/stream`);
       ws.binaryType = "arraybuffer";
       audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
