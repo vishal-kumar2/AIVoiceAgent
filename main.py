@@ -12,6 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
 from fastapi import  Request
+from config import user_config
 
 from assemblyai.streaming.v3 import (
     StreamingClient, StreamingClientOptions,
@@ -23,6 +24,11 @@ from assemblyai.streaming.v3 import (
 load_dotenv()
 ASSEMBLYAI_API_KEY = os.getenv("ASSEMBLYAI_API_KEY")
 MURF_API_KEY = os.getenv("MURF_API_KEY")
+
+
+
+
+
 
 # Import helper functions
 from services.llm_service import get_gemini_response
@@ -36,8 +42,33 @@ BASE_DIR = Path(__file__).resolve().parent
 templates = Jinja2Templates(directory=str(BASE_DIR / "templates"))
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
+from fastapi import Body
 
-@app.get("/test")
+@app.post("/config/update")
+async def update_config(data: dict = Body(...)):
+    """
+    Update API keys dynamically from UI.
+    Example JSON:
+    {
+        "MURF_API_KEY": "abc123",
+        "ASSEMBLYAI_API_KEY": "xyz789"
+    }
+    """
+    for key, val in data.items():
+        if key in user_config and val:
+            user_config[key] = val.strip()
+            logger.info(f"🔑 Updated {key} via UI")
+    return {"status": "ok", "config": {k: "****" if v else None for k,v in user_config.items()}}
+
+
+@app.get("/config")
+async def get_config():
+    """
+    Return current config (with masked values).
+    """
+    return {k: "****" if v else None for k, v in user_config.items()}
+
+@app.get("/")
 async def get_test():
     html_path = BASE_DIR / "templates" / "test.html"
     return HTMLResponse(html_path.read_text(encoding="utf-8"))
@@ -93,7 +124,8 @@ async def websocket_stream(websocket: WebSocket):
     persona_choice = "teacher"
     persona = persona_map[persona_choice]
 
-    client = StreamingClient(StreamingClientOptions(api_key=ASSEMBLYAI_API_KEY))
+    client = StreamingClient(StreamingClientOptions(api_key=user_config["ASSEMBLYAI_API_KEY"]))
+
 
 # in main.py
     conversation_history = []
@@ -106,7 +138,12 @@ async def websocket_stream(websocket: WebSocket):
         conversation_history.append({"role": "assistant", "content": llm_response})
 
         await websocket.send_text(f"LLM:{llm_response}")
-        audio_b64 = await murf_tts_base64(llm_response, persona["voice"])
+        audio_b64 = await murf_tts_base64(
+            llm_response,
+            persona["voice"],
+            user_config["MURF_API_KEY"]   # ✅ dynamic API key
+        )
+
         if audio_b64:
             await websocket.send_text(f"AUDIO:{audio_b64}")
 
@@ -167,3 +204,10 @@ async def websocket_stream(websocket: WebSocket):
         except Exception:
             logger.exception("Error disconnecting AssemblyAI client")
         logger.info("🔒 Session closed")
+
+
+
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)

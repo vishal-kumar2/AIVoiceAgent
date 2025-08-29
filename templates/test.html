@@ -5,13 +5,61 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Voice Agent</title>
   <link rel="stylesheet" href="/static/style.css" />
+  <style>
+    /* --- Modal styling --- */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 999;
+      left: 0; top: 0;
+      width: 100%; height: 100%;
+      overflow: auto;
+      background-color: rgba(0,0,0,0.5);
+    }
+    .modal-content {
+      background-color: #fff;
+      margin: 10% auto;
+      padding: 20px;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 500px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .close-btn {
+      float: right;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    .config-card input {
+      width: 100%;
+      padding: 6px;
+      margin: 6px 0 12px 0;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+    }
+    .config-card button {
+      padding: 8px 16px;
+      border: none;
+      border-radius: 4px;
+      background-color: #4666f4;
+      color: #fff;
+      cursor: pointer;
+    }
+    .config-card small {
+      display: block;
+      margin-top: 6px;
+      color: #333;
+    }
+  </style>
 </head>
 <body>
   <div class="app">
     <header class="app-header">
       <h1>🎙️ Jarvis: Voice Agent</h1>
       <div class="session-pill">
-        <span id="sessionIdLabel">Session: —</span>
+        <span id="sessionIdLabel">Setting⚙️:</span>
+        <button id="openApiKeysBtn" style="margin-left: 12px;"> API Keys</button>
       </div>
     </header>
 
@@ -26,9 +74,7 @@
             <option value="cowboy">Cowboy</option>
             <option value="robot">Robot</option>
             <option value="comedian">Comedian</option>
-
           </select>
-
         </div>
 
         <div class="conversation" id="conversationLog"></div>
@@ -41,191 +87,187 @@
         </div>
 
         <div class="helper">
-          <small>Hey Good afternnon ,Vishal</small>
+          <small>Hey Good afternoon, Vishal</small>
         </div>
       </div>
     </main>
   </div>
 
+  <!-- API Keys Modal -->
+  <div id="apiKeysModal" class="modal">
+    <div class="modal-content">
+      <span class="close-btn">&times;</span>
+      <div class="config-card">
+        <h3 style="color:#3d7cff;">API Keys (Dynamic)</h3>
+        <div>
+          <label for="assemblyKey" style="color:#6ea3ff">AssemblyAI:</label>
+          <input type="password" id="assemblyKey" placeholder="Enter AssemblyAI Key" />
+        </div>
+        <div>
+          <label for="murfKey" style="color:#6ea3ff">Murf:</label>
+          <input type="password" id="murfKey" placeholder="Enter Murf Key" />
+        </div>
+        <div>
+          <label for="geminiKey" style="color:#6ea3ff">Gemini:</label>
+          <input type="password" id="geminiKey" placeholder="Enter Gemini Key" />
+        </div>
+        <button id="updateKeysBtn">Update Keys</button>
+        <small id="configStatus"></small>
+      </div>
+    </div>
+  </div>
+
   <!-- Hidden audio element for autoplay -->
   <audio id="replyAudio" style="display:none"></audio>
 
-  <script >
-   const recordBtn = document.getElementById("recordBtn");
-const micLabel = document.getElementById("micLabel");
-const agentStatus = document.getElementById("agentStatus");
-const statusText = document.getElementById("statusText");
-const conversationLog = document.getElementById("conversationLog");
+  <script>
+    const recordBtn = document.getElementById("recordBtn");
+    const micLabel = document.getElementById("micLabel");
+    const agentStatus = document.getElementById("agentStatus");
+    const statusText = document.getElementById("statusText");
+    const conversationLog = document.getElementById("conversationLog");
 
-let ws;
-let audioCtx;
-let audioQueue = [];
+    let ws;
+    let audioCtx;
+    let audioQueue = [];
 
-// Add message to UI
-function addMessage(text, sender="assistant") {
-  const msgDiv = document.createElement("div");
-  msgDiv.classList.add("msg", sender);
+    // --- Modal Elements ---
+    const modal = document.getElementById("apiKeysModal");
+    const openBtn = document.getElementById("openApiKeysBtn");
+    const closeBtn = modal.querySelector(".close-btn");
 
-  const bubble = document.createElement("div");
-  bubble.classList.add("bubble");
-  bubble.textContent = text;
+    openBtn.onclick = () => modal.style.display = "block";
+    closeBtn.onclick = () => modal.style.display = "none";
+    window.onclick = e => { if(e.target == modal) modal.style.display = "none"; };
 
-  msgDiv.appendChild(bubble);
-  conversationLog.appendChild(msgDiv);
-  conversationLog.scrollTop = conversationLog.scrollHeight;
-}
-
-// Send persona update when dropdown changes
-document.getElementById("personaSelect").addEventListener("change", () => {
-  if (ws && ws.readyState === WebSocket.OPEN) {
-    const persona = getSelectedPersona();
-    console.log("👉 Switching persona mid-session to:", persona);
-    ws.send(`PERSONA:${persona}`);
-  }
-});
-
-
-// Decode and play Murf audio chunks
-function playAudioChunk(b64) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
-      const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
-
-      const source = audioCtx.createBufferSource();
-      source.buffer = audioBuffer;
-      source.connect(audioCtx.destination);
-
-      const now = audioCtx.currentTime;
-      const startTime = Math.max(audioQueue.length ? audioQueue[audioQueue.length-1].end : now, now);
-
-      source.onended = () => resolve(); // resolve when audio finished
-      source.start(startTime);
-
-      audioQueue.push({ source, end: startTime + audioBuffer.duration });
-
-      resolve(); // resolve immediately when playback starts
-    } catch (err) {
-      reject(err);
+    // Add message to UI
+    function addMessage(text, sender="assistant") {
+      const msgDiv = document.createElement("div");
+      msgDiv.classList.add("msg", sender);
+      const bubble = document.createElement("div");
+      bubble.classList.add("bubble");
+      bubble.textContent = text;
+      msgDiv.appendChild(bubble);
+      conversationLog.appendChild(msgDiv);
+      conversationLog.scrollTop = conversationLog.scrollHeight;
     }
-  });
-}
 
-// Start/Stop recording
-recordBtn.onclick = async () => {
-  if (recordBtn.classList.contains("recording")) {
-    stopRecording();
-    return;
-  }
-
-  ws = new WebSocket(`ws://${location.host}/ws/stream`);
-  ws.binaryType = "arraybuffer";
-
-  audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-  const source = audioCtx.createMediaStreamSource(stream);
-  const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-  source.connect(processor);
-  processor.connect(audioCtx.destination);
-
-  processor.onaudioprocess = e => {
-    if (ws.readyState !== WebSocket.OPEN) return;
-    const input = e.inputBuffer.getChannelData(0);
-    const pcm16 = new Int16Array(input.length);
-    for (let i = 0; i < input.length; i++)
-      pcm16[i] = Math.max(-1, Math.min(1, input[i])) < 0 ? input[i] * 0x8000 : input[i] * 0x7fff;
-    ws.send(pcm16.buffer);
-  };
-
-  ws.onopen = () => {
-  let persona = "teacher"; // default fallback
-  try {
-    if (typeof getSelectedPersona === "function") {
-      persona = getSelectedPersona();
-    }
-  } catch (e) {
-    console.error("Persona select failed, using default:", e);
-  }
-
-  console.log("👉 Sending persona to backend:", persona);
-  ws.send(`PERSONA:${persona}`);
-};
-
-
-  ws.onclose = () => {
-    agentStatus.className = "status-dot idle";
-    statusText.textContent = "Idle";
-  };
-
-  let pendingAssistantText = null;
-
-ws.onmessage = async (event) => {
-  const msg = event.data;
-
-  if (msg.startsWith("LLM:")) {
-    // save assistant text until audio is played
-    pendingAssistantText = msg.replace("LLM:", "");
-
-  } else if (msg.startsWith("AUDIO:")) {
-    const b64 = msg.replace("AUDIO:", "");
-    try {
-      await playAudioChunk(b64);
-
-      // once audio starts, show the text bubble
-      if (pendingAssistantText) {
-        addMessage(pendingAssistantText, "assistant");
-        pendingAssistantText = null;
+    // Persona change
+    document.getElementById("personaSelect").addEventListener("change", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const persona = getSelectedPersona();
+        ws.send(`PERSONA:${persona}`);
       }
-    } catch (err) {
-      console.error("Audio decode/playback error:", err);
+    });
+
+    // Audio playback
+    async function playAudioChunk(b64) {
+      try {
+        const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+        const audioBuffer = await audioCtx.decodeAudioData(bytes.buffer);
+        const source = audioCtx.createBufferSource();
+        source.buffer = audioBuffer;
+        source.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+        const startTime = Math.max(audioQueue.length ? audioQueue[audioQueue.length-1].end : now, now);
+        source.onended = () => {};
+        source.start(startTime);
+        audioQueue.push({ source, end: startTime + audioBuffer.duration });
+      } catch (err) { console.error(err); }
     }
 
-  } else if (msg.startsWith("USER:")) {
-    const text = msg.replace("USER:", "");
-    addMessage(text, "user");
-  }
-};
+    // Recording
+    recordBtn.onclick = async () => {
+      if (recordBtn.classList.contains("recording")) {
+        stopRecording();
+        return;
+      }
 
+      ws = new WebSocket(`ws://${location.host}/ws/stream`);
+      ws.binaryType = "arraybuffer";
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const source = audioCtx.createMediaStreamSource(stream);
+      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+      source.connect(processor);
+      processor.connect(audioCtx.destination);
 
-  recordBtn.disabled = true;
-  micLabel.textContent = "Stop Recording";
-  recordBtn.classList.add("recording");
-};
+      processor.onaudioprocess = e => {
+        if (ws.readyState !== WebSocket.OPEN) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const pcm16 = new Int16Array(input.length);
+        for (let i=0;i<input.length;i++) pcm16[i]=Math.max(-1,Math.min(1,input[i]))<0?input[i]*0x8000:input[i]*0x7fff;
+        ws.send(pcm16.buffer);
+      };
 
-// Stop recording
-function stopRecording() {
-  const tracks = audioCtx?.createMediaStreamSource?.()?.mediaStream?.getTracks() || [];
-  tracks.forEach(t => t.stop());
-  ws?.close();
-  recordBtn.disabled = false;
-  micLabel.textContent = "Start Recording";
-  recordBtn.classList.remove("recording");
-}
+      ws.onopen = () => {
+        const persona = getSelectedPersona();
+        ws.send(`PERSONA:${persona}`);
+      };
 
-function getSelectedPersona() {
-  const select = document.getElementById("personaSelect");
-  return select.value;
-}
+      ws.onclose = () => {
+        agentStatus.className = "status-dot idle";
+        statusText.textContent = "Idle";
+      };
 
-// Example fetch call
-async function sendMessage(userMessage) {
-  const persona = getSelectedPersona();
+      let pendingText = null;
+      ws.onmessage = async (event) => {
+        const msg = event.data;
+        if (msg.startsWith("LLM:")) pendingText = msg.replace("LLM:", "");
+        else if (msg.startsWith("AUDIO:")) {
+          const b64 = msg.replace("AUDIO:", "");
+          await playAudioChunk(b64);
+          if (pendingText) { addMessage(pendingText, "assistant"); pendingText = null; }
+        } else if (msg.startsWith("USER:")) addMessage(msg.replace("USER:", ""), "user");
+      };
 
-  const response = await fetch("/chat", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      message: userMessage,
-      persona: persona
-    })
-  });
+      recordBtn.disabled = true;
+      micLabel.textContent = "Stop Recording";
+      recordBtn.classList.add("recording");
+    };
 
-  const data = await response.json();
-  displayAssistantMessage(data.reply);
-}
+    function stopRecording() {
+      const tracks = audioCtx?.createMediaStreamSource?.()?.mediaStream?.getTracks() || [];
+      tracks.forEach(t => t.stop());
+      ws?.close();
+      recordBtn.disabled = false;
+      micLabel.textContent = "Start Recording";
+      recordBtn.classList.remove("recording");
+    }
 
+    function getSelectedPersona() {
+      return document.getElementById("personaSelect").value;
+    }
 
+    // --- Dynamic API key update ---
+    document.getElementById("updateKeysBtn").addEventListener("click", async () => {
+      const assemblyKey = document.getElementById("assemblyKey").value.trim();
+      const murfKey = document.getElementById("murfKey").value.trim();
+      const geminiKey = document.getElementById("geminiKey").value.trim();
 
+      const payload = {};
+      if (assemblyKey && assemblyKey !== "********") payload.ASSEMBLYAI_API_KEY = assemblyKey;
+      if (murfKey && murfKey !== "********") payload.MURF_API_KEY = murfKey;
+      if (geminiKey && geminiKey !== "********") payload.GEMINI_API_KEY = geminiKey;
+
+      try {
+        const resp = await fetch("/config/update", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await resp.json();
+        document.getElementById("configStatus").textContent = "✅ Keys updated!";
+        console.log("Updated keys:", data.config);
+        // Mask inputs
+        if(payload.ASSEMBLYAI_API_KEY) document.getElementById("assemblyKey").value = "********";
+        if(payload.MURF_API_KEY) document.getElementById("murfKey").value = "********";
+        if(payload.GEMINI_API_KEY) document.getElementById("geminiKey").value = "********";
+      } catch(err){
+        document.getElementById("configStatus").textContent = "❌ Failed to update keys.";
+        console.error(err);
+      }
+    });
   </script>
 </body>
 </html>
