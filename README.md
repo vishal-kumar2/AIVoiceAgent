@@ -41,7 +41,7 @@ Now fully deployed and accessible online via **Render** 🚀.
 ## 📦 Installation (Local Development)
 
 ```bash
-git clone  -b streaming https://github.com/<your-username>/AIVoiceAgent.git
+git clone -b streaming https://github.com/<your-username>/AIVoiceAgent.git
 cd AIVoiceAgent
 
 # Create and activate a virtual environment
@@ -62,12 +62,10 @@ pip install -r requirements.txt
 
 # Run locally
 uvicorn main:app --reload
+
 ---
 
 
-## 📂 Folder Structure
-
-```bash
 30-days-voice-agents/
 │── main.py
 │── .env
@@ -92,17 +90,21 @@ uvicorn main:app --reload
 
 ---
 🌐 Live Demo
-**[👉 Try the Live Demo](https://aivoiceagent-1-v7r5.onrender.com/)**
-
-
+👉 Try it here
 ---
 📌 Next Steps
 
 ✅ Improve conversation memory
-
 ✅ Add support for multiple TTS voices
 
 
 🤝 Contributing
 
 Pull requests are welcome! Feel free to open issues for new features or bug fixes.
+
+
+---
+
+👉 After saving, open the **Markdown preview in VS Code** (`Ctrl + Shift + V`) to check how it looks.  
+
+Do you want me to give you a **minimal copy-paste version** (no explanations, only final text) so you can drop it directly into `README.md`?
