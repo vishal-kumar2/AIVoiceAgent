@@ -65,24 +65,31 @@ uvicorn main:app --reload
 
 
 
-## 📂 Folder structure
+## 📂 Folder Structure
 
+```bash
 30-days-voice-agents/
-├── main.py
-├── .env
-├── requirements.txt
+│── main.py
+│── .env
+│── requirements.txt
+│
 ├── static/
 │   ├── script.js
-│   ├── style.css
+│   └── style.css
+│
 ├── uploads/
+│
 ├── templates/
 │   └── index.html
+│
 ├── services/
 │   ├── __init__.py
 │   ├── tts_service.py
 │   ├── stt_service.py
 │   └── llm_service.py
+│
 └── README.md
+
 
 
 🌐 Live Demo
