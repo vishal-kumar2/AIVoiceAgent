@@ -62,7 +62,7 @@ pip install -r requirements.txt
 
 # Run locally
 uvicorn main:app --reload
-
+---
 
 
 ## 📂 Folder Structure
@@ -90,14 +90,12 @@ uvicorn main:app --reload
 │
 └── README.md
 
-
-
+---
 🌐 Live Demo
-🌐 **[👉 Try the Live Demo](https://aivoiceagent-1-v7r5.onrender.com/)**
+**[👉 Try the Live Demo](https://aivoiceagent-1-v7r5.onrender.com/)**
 
 
-
-
+---
 📌 Next Steps
 
 ✅ Improve conversation memory
